@@ -177,7 +177,7 @@ consumption inside VOLTTRON (`locked` → `1`, `unlocked` → `0`).
            "Writable": true,
            "Starting Value": 0,
            "Type": "int",
-           "Notes": "智能门锁 (front door smart lock)"
+           "Notes": "Front door smart lock"
        }
    ]
 
