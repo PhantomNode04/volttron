@@ -4,9 +4,15 @@ Home Assistant Driver
 =====================
 
 The Home Assistant driver enables VOLTTRON to read any data point from any Home Assistant controlled device.
-Currently control(write access) is supported only for lights(state and brightness) and thermostats(state and temperature).
+Control (write access) is now supported for:
 
-The following diagram shows interaction between platform driver agent and home assistant driver.
+- Lights (state, brightness)
+- Thermostats (state, temperature)
+- **Smart Locks (NEW)**
+- **Fans (state, percentage) (NEW)**
+- **Motorized Curtains / Covers (state, position) (NEW)**
+
+The following diagram shows interaction between platform driver agent and Home Assistant driver.
 
 .. mermaid::
 
@@ -20,6 +26,7 @@ The following diagram shows interaction between platform driver agent and home a
        HomeAssistant Driver->>HomeAssistant: Send Turn Off Light Command (REST API)
        HomeAssistant-->>HomeAssistant Driver: Command Acknowledgement (Status Code: 200)
 
+
 Pre-requisites
 --------------
 Before proceeding, find your Home Assistant IP address and long-lived access token from `here <https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token>`_.
@@ -27,160 +34,236 @@ Before proceeding, find your Home Assistant IP address and long-lived access tok
 Clone the repository, start volttron, install the listener agent, and the platform driver agent.
 
 - `Listener agent <https://volttron.readthedocs.io/en/main/introduction/platform-install.html#installing-and-running-agents>`_
-- `Platform driver agent <https://volttron.readthedocs.io/en/main/agent-framework/core-service-agents/platform-driver/platform-driver-agent.html?highlight=platform%20driver%20isntall#configuring-the-platform-driver>`_
+- `Platform driver agent <https://volttron.readthedocs.io/en/main/agent-framework/core-service-agents/platform-driver/platform-driver-agent.html#configuring-the-platform-driver>`_
+
 
 Configuration
 --------------
 
-After cloning, generate configuration files. Each device requires one device configuration file and one registry file.
-Ensure your registry_config parameter in your device configuration file, links to correct registry config name in the
-config store. For more details on how volttron platform driver agent works with volttron configuration store see,
-`Platform driver configuration <https://volttron.readthedocs.io/en/main/agent-framework/driver-framework/platform-driver/platform-driver.html#configuration-and-installation>`_
-Examples for lights and thermostats are provided below.
+Each Home Assistant device requires:
+
+1. A **device configuration file**
+2. A **registry file**
+
+Ensure that the ``registry_config`` parameter in the device configuration links to the correct registry file stored in VOLTTRON’s configuration store.
+
 
 Device configuration
 ++++++++++++++++++++
 
-Device configuration file contains the connection details to you home assistant instance and driver_type as "home_assistant"
-
 .. code-block:: json
 
-   {
-       "driver_config": {
-           "ip_address": "Your Home Assistant IP",
-           "access_token": "Your Home Assistant Access Token",
-           "port": "Your Port"
-       },
-       "driver_type": "home_assistant",
-       "registry_config": "config://light.example.json",
-       "interval": 30,
-       "timezone": "UTC"
-   }
+    {
+        "driver_config": {
+            "ip_address": "Your Home Assistant IP",
+            "access_token": "Your Home Assistant Access Token",
+            "port": "Your Port"
+        },
+        "driver_type": "home_assistant",
+        "registry_config": "config://light.example.json",
+        "interval": 30,
+        "timezone": "UTC"
+    }
+
 
 Registry Configuration
 +++++++++++++++++++++++
 
-Registry file can contain one single device and its attributes or a logical group of devices and its
-attributes. Each entry should include the full entity id of the device, including but not limited to home assistant provided prefix
-such as "light.",  "climate." etc. The driver uses these prefixes to convert states into integers.
-Like mentioned before, the driver can only control lights and thermostats but can get data from all devices
-controlled by home assistant
+A registry file can contain one or more Home Assistant entities.
 
-Each entry in a registry file should also have a 'Entity Point' and a unique value for 'Volttron Point Name'. The 'Entity ID' maps to the device instance, the 'Entity Point' extracts the attribute or state, and 'Volttron Point Name' determines the name of that point as it appears in VOLTTRON.
+Each entry includes:
 
-Attributes can be located in the developer tools in the Home Assistant GUI.
+- **Entity ID** (e.g., ``light.example``, ``fan.living_room``, ``cover.my_shade``)
+- **Entity Point** – the state or attribute (e.g., ``state``, ``brightness``, ``percentage``, ``position``)
+- **Volttron Point Name** – unique name inside VOLTTRON
+- **Writable** – whether the point supports ``set_point``
+- **Type** – int, float, boolean, string…
 
-.. image:: home-assistant.png
+Attributes can be viewed in Home Assistant under:
+
+**Developer Tools → States**
 
 
-Below is an example file named light.example.json which has attributes of a single light instance with entity
-id 'light.example':
-
+Example Light Registry
+----------------------
 
 .. code-block:: json
 
-   [
-       {
-           "Entity ID": "light.example",
-           "Entity Point": "state",
-           "Volttron Point Name": "light_state",
-           "Units": "On / Off",
-           "Units Details": "on/off",
-           "Writable": true,
-           "Starting Value": true,
-           "Type": "boolean",
-           "Notes": "lights hallway"
-       },
-       {
-           "Entity ID": "light.example",
-           "Entity Point": "brightness",
-           "Volttron Point Name": "light_brightness",
-           "Units": "int",
-           "Units Details": "light level",
-           "Writable": true,
-           "Starting Value": 0,
-           "Type": "int",
-           "Notes": "brightness control, 0 - 255"
-       }
-   ]
+    [
+        {
+            "Entity ID": "light.example",
+            "Entity Point": "state",
+            "Volttron Point Name": "light_state",
+            "Units": "On / Off",
+            "Units Details": "on/off",
+            "Writable": true,
+            "Starting Value": true,
+            "Type": "boolean",
+            "Notes": "lights hallway"
+        },
+        {
+            "Entity ID": "light.example",
+            "Entity Point": "brightness",
+            "Volttron Point Name": "light_brightness",
+            "Units": "int",
+            "Units Details": "light level",
+            "Writable": true,
+            "Starting Value": 0,
+            "Type": "int",
+            "Notes": "brightness control, 0 - 255"
+        }
+    ]
 
-
-.. note::
-
-When using a single registry file to represent a logical group of multiple physical entities, make sure the
-"Volttron Point Name" is unique within a single registry file.
-
-For example, if a registry file contains entities with
-id  'light.instance1' and 'light.instance2' the entry for the attribute brightness for these two light instances could
-have "Volttron Point Name" as 'light1/brightness' and 'light2/brightness' respectively. This would ensure that data
-is posted to unique topic names and brightness data from light1 is not overwritten by light2 or vice-versa.
 
 Example Thermostat Registry
 ***************************
 
-For thermostats, the state is converted into numbers as follows: "0: Off, 2: heat, 3: Cool, 4: Auto",
+.. code-block:: json
+
+    [
+        {
+            "Entity ID": "climate.my_thermostat",
+            "Entity Point": "state",
+            "Volttron Point Name": "thermostat_state",
+            "Units": "Enumeration",
+            "Units Details": "0: Off, 2: Heat, 3: Cool, 4: Auto",
+            "Writable": true,
+            "Starting Value": 1,
+            "Type": "int"
+        },
+        {
+            "Entity ID": "climate.my_thermostat",
+            "Entity Point": "current_temperature",
+            "Volttron Point Name": "volttron_current_temperature",
+            "Units": "F",
+            "Writable": true,
+            "Type": "float"
+        },
+        {
+            "Entity ID": "climate.my_thermostat",
+            "Entity Point": "temperature",
+            "Volttron Point Name": "set_temperature",
+            "Units": "F",
+            "Writable": true,
+            "Type": "float"
+        }
+    ]
+
+
+Example Smart Lock Registry (NEW)
+*********************************
 
 .. code-block:: json
 
-   [
-       {
-           "Entity ID": "climate.my_thermostat",
-           "Entity Point": "state",
-           "Volttron Point Name": "thermostat_state",
-           "Units": "Enumeration",
-           "Units Details": "0: Off, 2: heat, 3: Cool, 4: Auto",
-           "Writable": true,
-           "Starting Value": 1,
-           "Type": "int",
-           "Notes": "Mode of the thermostat"
-       },
-       {
-           "Entity ID": "climate.my_thermostat",
-           "Entity Point": "current_temperature",
-           "Volttron Point Name": "volttron_current_temperature",
-           "Units": "F",
-           "Units Details": "Current Ambient Temperature",
-           "Writable": true,
-           "Starting Value": 72,
-           "Type": "float",
-           "Notes": "Current temperature reading"
-       },
-       {
-           "Entity ID": "climate.my_thermostat",
-           "Entity Point": "temperature",
-           "Volttron Point Name": "set_temperature",
-           "Units": "F",
-           "Units Details": "Desired Temperature",
-           "Writable": true,
-           "Starting Value": 75,
-           "Type": "float",
-           "Notes": "Target Temp"
-       }
-   ]
+    [
+        {
+            "Entity ID": "lock.front_door",
+            "Entity Point": "state",
+            "Volttron Point Name": "front_door_lock_state",
+            "Units": "0 = unlocked, 1 = locked",
+            "Writable": true,
+            "Type": "int",
+            "Notes": "Front door smart lock"
+        }
+    ]
 
 
+Example Fan Registry (NEW)
+**************************
 
-Transfer the registers files and the config files into the VOLTTRON config store using the commands below:
+Fans in Home Assistant use ``fan.*`` entity IDs.
+
+Supported:
+
+- ``state`` → on/off
+- ``percentage`` → 0–100 speed
+
+.. code-block:: json
+
+    [
+        {
+            "Entity ID": "fan.living_room",
+            "Entity Point": "state",
+            "Volttron Point Name": "living_room_fan_state",
+            "Units": "On/Off",
+            "Writable": true,
+            "Type": "int"
+        },
+        {
+            "Entity ID": "fan.living_room",
+            "Entity Point": "percentage",
+            "Volttron Point Name": "living_room_fan_percentage",
+            "Units": "%",
+            "Writable": true,
+            "Type": "int"
+        }
+    ]
+
+
+Example Motorized Curtain / Cover Registry (NEW)
+************************************************
+
+Covers in Home Assistant include:
+
+- Electric curtains  
+- Window blinds  
+- Roller shades  
+- Garage doors  
+
+Supported:
+
+- ``state`` → open/closed (mapped to 1/0)
+- ``position`` → 0–100%
+
+.. code-block:: json
+
+    [
+        {
+            "Entity ID": "cover.living_room_curtain",
+            "Entity Point": "state",
+            "Volttron Point Name": "curtain_state",
+            "Units": "Open/Closed",
+            "Writable": true,
+            "Type": "int"
+        },
+        {
+            "Entity ID": "cover.living_room_curtain",
+            "Entity Point": "position",
+            "Volttron Point Name": "curtain_position",
+            "Units": "%",
+            "Writable": true,
+            "Type": "int"
+        }
+    ]
+
+
+Transfer registry and configuration files into the VOLTTRON config store:
 
 .. code-block:: bash
 
-   vctl config store platform.driver light.example.json HomeAssistant_Driver/light.example.json
-   vctl config store platform.driver devices/BUILDING/ROOM/light.example HomeAssistant_Driver/light.example.config
+    vctl config store platform.driver light.example.json HomeAssistant_Driver/light.example.json
+    vctl config store platform.driver devices/BUILDING/ROOM/light.example HomeAssistant_Driver/light.example.config
 
-Upon completion, initiate the platform driver. Utilize the listener agent to verify the driver output:
-
-.. code-block:: bash
-
-   2023-09-12 11:37:00,226 (listeneragent-3.3 211531) __main__ INFO: Peer: pubsub, Sender: platform.driver:, Bus: , Topic: devices/BUILDING/ROOM/light.example/all, Headers: {'Date': '2023-09-12T18:37:00.224648+00:00', 'TimeStamp': '2023-09-12T18:37:00.224648+00:00', 'SynchronizedTimeStamp': '2023-09-12T18:37:00.000000+00:00', 'min_compatible_version': '3.0', 'max_compatible_version': ''}, Message:
-   [{'light_brightness': 254, 'state': 'on'},
-    {'light_brightness': {'type': 'integer', 'tz': 'UTC', 'units': 'int'},
-     'state': {'type': 'integer', 'tz': 'UTC', 'units': 'On / Off'}}]
 
 Running Tests
 +++++++++++++++++++++++
-To run tests on the VOLTTRON home assistant driver you need to create a helper in your home assistant instance. This can be done by going to **Settings > Devices & services > Helpers > Create Helper > Toggle**. Name this new toggle **volttrontest**. After that run the pytest from the root of your VOLTTRON file.
+
+To run tests for the Home Assistant driver:
+
+1. Create a toggle helper named ``volttrontest`` in Home Assistant:
+
+   **Settings → Devices & Services → Helpers → Create Helper → Toggle**
+
+2. Run pytest from the VOLTTRON root:
 
 .. code-block:: bash
+
     pytest volttron/services/core/PlatformDriverAgent/tests/test_home_assistant.py
 
-If everything works, you will see 6 passed tests.
+If everything works, you will see all tests passed, including:
+
+- Light tests  
+- Thermostat tests  
+- **Lock tests**
+- **Fan tests**
+- **Cover tests**
