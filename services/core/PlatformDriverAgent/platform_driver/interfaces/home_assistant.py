@@ -23,16 +23,11 @@
 # }}}
 
 
-import random
-from math import pi
-import json
-import sys
-from platform_driver.interfaces import BaseInterface, BaseRegister, BasicRevert
-from volttron.platform.agent import utils
-from volttron.platform.vip.agent import Agent
 import logging
 import requests
-from requests import get
+
+from platform_driver.interfaces import BaseInterface, BaseRegister, BasicRevert
+
 
 _log = logging.getLogger(__name__)
 type_mapping = {"string": str,
@@ -41,6 +36,9 @@ type_mapping = {"string": str,
                 "float": float,
                 "bool": bool,
                 "boolean": bool}
+
+LOCK_ON_VALUES = {"1", "true", "on", "lock", "locked", "close", "closed"}
+LOCK_OFF_VALUES = {"0", "false", "off", "unlock", "unlocked", "open", "opened"}
 
 
 class HomeAssistantRegister(BaseRegister):
@@ -178,9 +176,19 @@ class Interface(BasicRevert, BaseInterface):
                 error_msg = f"Currently set_point is supported only for thermostats state and temperature {register.entity_id}"
                 _log.error(error_msg)
                 raise ValueError(error_msg)
+        elif register.entity_id.startswith("lock."):
+            if entity_point != "state":
+                error_msg = f"Currently, locks only support state writes {register.entity_id}"
+                _log.error(error_msg)
+                raise ValueError(error_msg)
+            desired_service = self._normalize_lock_command(register.value)
+            if desired_service == "lock":
+                self.lock_device(register.entity_id)
+            elif desired_service == "unlock":
+                self.unlock_device(register.entity_id)
         else:
             error_msg = f"Unsupported entity_id: {register.entity_id}. " \
-                        f"Currently set_point is supported only for thermostats and lights"
+                        f"Currently set_point is supported only for thermostats, lights, locks, and input booleans"
             _log.error(error_msg)
             raise ValueError(error_msg)
         return register.value
@@ -237,16 +245,21 @@ class Interface(BasicRevert, BaseInterface):
                         register.value = attribute
                         result[register.point_name] = attribute
                 # handling light states
-                elif "light." or "input_boolean." in entity_id: # Checks for lights or input bools since they have the same states.
+                elif entity_id.startswith("light.") or entity_id.startswith("input_boolean.") or entity_id.startswith("lock."):
                     if entity_point == "state":
                         state = entity_data.get("state", None)
-                        # Converting light states to numbers.
-                        if state == "on":
-                            register.value = 1
-                            result[register.point_name] = 1
-                        elif state == "off":
-                            register.value = 0
-                            result[register.point_name] = 0
+                        if entity_id.startswith("lock."):
+                            converted_state = self._convert_lock_state(state)
+                            register.value = converted_state
+                            result[register.point_name] = converted_state
+                        else:
+                            # Converting light/input boolean states to numbers.
+                            if state == "on":
+                                register.value = 1
+                                result[register.point_name] = 1
+                            elif state == "off":
+                                register.value = 0
+                                result[register.point_name] = 0
                     else:
                         attribute = entity_data.get("attributes", {}).get(f"{entity_point}", 0)
                         register.value = attribute
@@ -303,6 +316,47 @@ class Interface(BasicRevert, BaseInterface):
                 self.set_default(self.point_name, register.value)
 
             self.insert_register(register)
+
+    def _normalize_lock_command(self, value):
+        """
+        Normalize the incoming lock command to supported services.
+        :param value: incoming value (int/bool/str)
+        :return: "lock" or "unlock"
+        """
+        if isinstance(value, bool):
+            return "lock" if value else "unlock"
+
+        if isinstance(value, (int, float)):
+            if int(value) == 1:
+                return "lock"
+            if int(value) == 0:
+                return "unlock"
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in LOCK_ON_VALUES:
+                return "lock"
+            if normalized in LOCK_OFF_VALUES:
+                return "unlock"
+
+        error_msg = f"Unsupported lock command value: {value}. Accepts 1/0, True/False, lock/unlock"
+        _log.error(error_msg)
+        raise ValueError(error_msg)
+
+    @staticmethod
+    def _convert_lock_state(state):
+        """
+        Convert lock state strings to integers for VOLTTRON consumption.
+        Returns state if conversion is not applicable to preserve detail.
+        """
+        if state is None:
+            return None
+        normalized = state.lower()
+        if normalized == "locked":
+            return 1
+        if normalized == "unlocked":
+            return 0
+        return state
 
     def turn_off_lights(self, entity_id):
         url = f"http://{self.ip_address}:{self.port}/api/services/light/turn_off"
@@ -405,3 +459,22 @@ class Interface(BasicRevert, BaseInterface):
             print(f"Successfully set {entity_id} to {state}")
         else:
             print(f"Failed to set {entity_id} to {state}: {response.text}")
+
+    def lock_device(self, entity_id):
+        self._send_lock_command(entity_id, "lock")
+
+    def unlock_device(self, entity_id):
+        self._send_lock_command(entity_id, "unlock")
+
+    def _send_lock_command(self, entity_id, action):
+        if not entity_id.startswith("lock."):
+            error_msg = f"{entity_id} is not a valid lock entity ID."
+            _log.error(error_msg)
+            raise ValueError(error_msg)
+        url = f"http://{self.ip_address}:{self.port}/api/services/lock/{action}"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {"entity_id": entity_id}
+        _post_method(url, headers, payload, f"{action} {entity_id}")

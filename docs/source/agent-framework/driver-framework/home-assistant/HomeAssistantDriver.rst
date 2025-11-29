@@ -4,7 +4,7 @@ Home Assistant Driver
 =====================
 
 The Home Assistant driver enables VOLTTRON to read any data point from any Home Assistant controlled device.
-Currently control(write access) is supported only for lights(state and brightness) and thermostats(state and temperature).
+Control (write access) is supported for lights (state and brightness), thermostats (state and temperature), and smart locks (state).
 
 The following diagram shows interaction between platform driver agent and home assistant driver.
 
@@ -63,7 +63,7 @@ Registry Configuration
 Registry file can contain one single device and its attributes or a logical group of devices and its
 attributes. Each entry should include the full entity id of the device, including but not limited to home assistant provided prefix
 such as "light.",  "climate." etc. The driver uses these prefixes to convert states into integers.
-Like mentioned before, the driver can only control lights and thermostats but can get data from all devices
+Like mentioned before, the driver can control lights, thermostats, and smart locks but can get data from all devices
 controlled by home assistant
 
 Each entry in a registry file should also have a 'Entity Point' and a unique value for 'Volttron Point Name'. The 'Entity ID' maps to the device instance, the 'Entity Point' extracts the attribute or state, and 'Volttron Point Name' determines the name of that point as it appears in VOLTTRON.
@@ -155,6 +155,29 @@ For thermostats, the state is converted into numbers as follows: "0: Off, 2: hea
            "Starting Value": 75,
            "Type": "float",
            "Notes": "Target Temp"
+       }
+   ]
+
+Example Smart Lock Registry
+***************************
+
+Smart locks use `lock.` entity ids in Home Assistant. State writes accept numeric values (`1` = locked, `0` = unlocked),
+booleans, or the strings `lock`/`unlock`. The driver converts Home Assistant reported state strings into integers for easy
+consumption inside VOLTTRON (`locked` → `1`, `unlocked` → `0`).
+
+.. code-block:: json
+
+   [
+       {
+           "Entity ID": "lock.front_door",
+           "Entity Point": "state",
+           "Volttron Point Name": "front_door_lock_state",
+           "Units": "Enumeration",
+           "Units Details": "0: unlocked, 1: locked",
+           "Writable": true,
+           "Starting Value": 0,
+           "Type": "int",
+           "Notes": "智能门锁 (front door smart lock)"
        }
    ]
 
