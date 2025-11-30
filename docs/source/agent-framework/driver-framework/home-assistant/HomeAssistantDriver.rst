@@ -201,9 +201,50 @@ Upon completion, initiate the platform driver. Utilize the listener agent to ver
 
 Running Tests
 +++++++++++++++++++++++
-To run tests on the VOLTTRON home assistant driver you need to create a helper in your home assistant instance. This can be done by going to **Settings > Devices & services > Helpers > Create Helper > Toggle**. Name this new toggle **volttrontest**. After that run the pytest from the root of your VOLTTRON file.
+
+Integration tests
+*****************
+
+To run integration tests on the VOLTTRON Home Assistant driver you need to create a helper in your Home Assistant instance.
+This can be done by going to **Settings > Devices & services > Helpers > Create Helper > Toggle**. Name this new toggle
+**volttrontest**. After that, configure the test module variables in
+`volttron/services/core/PlatformDriverAgent/tests/test_home_assistant.py`:
+
+- **HOMEASSISTANT_TEST_IP**: IP address of your Home Assistant instance
+- **ACCESS_TOKEN**: long-lived access token
+- **PORT**: HTTP port of your Home Assistant instance
+
+Then run pytest from the root of your VOLTTRON checkout:
 
 .. code-block:: bash
     pytest volttron/services/core/PlatformDriverAgent/tests/test_home_assistant.py
 
-If everything works, you will see 6 passed tests.
+If everything works, you will see the Home Assistant integration tests pass.
+
+Smart lock integration test
+***************************
+
+To exercise smart lock write/read behavior against a real device, configure a lock entity id and connection details in
+`volttron/services/core/PlatformDriverAgent/tests/test_home_assistant_lock.py`:
+
+- **HOMEASSISTANT_TEST_IP**
+- **ACCESS_TOKEN**
+- **PORT**
+- **LOCK_ENTITY_ID** (for example, `"lock.front_door"`)
+
+Then run:
+
+.. code-block:: bash
+
+    pytest volttron/services/core/PlatformDriverAgent/tests/test_home_assistant_lock.py
+
+
+Unit tests
+**********
+
+The driver also includes unit tests that verify helper logic (such as smart lock state normalization) without requiring
+a running Home Assistant instance:
+
+.. code-block:: bash
+
+    pytest volttron/services/core/PlatformDriverAgent/tests/test_home_assistant_unit.py

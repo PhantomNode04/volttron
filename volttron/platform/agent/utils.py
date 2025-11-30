@@ -55,9 +55,40 @@ from tzlocal import get_localzone
 from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog_gevent import Observer
 
-from volttron.platform import get_address, get_home, jsonapi
-from volttron.utils import AbsolutePathFileReloader, VolttronHomeFileReloader
-from volttron.utils.prompt import prompt_response
+# Delay import to avoid circular dependency
+# from volttron.platform import get_address, get_home, jsonapi
+# from volttron.utils import AbsolutePathFileReloader, VolttronHomeFileReloader
+# from volttron.utils.prompt import prompt_response
+
+def _get_prompt_response():
+    """Lazy import prompt_response to avoid circular dependency."""
+    try:
+        from volttron.utils.prompt import prompt_response
+        return prompt_response
+    except ImportError:
+        # Fallback if prompt module doesn't exist
+        def _fallback_prompt(prompt_text, default=None):
+            return default or ""
+        return _fallback_prompt
+
+# Import jsonapi directly to avoid circular import
+from volttron.platform import jsonapi
+
+# Lazy import functions to avoid circular dependency
+def _get_home():
+    """Lazy import get_home to avoid circular dependency."""
+    from volttron.platform import get_home
+    return get_home
+
+def _get_address():
+    """Lazy import get_address to avoid circular dependency."""
+    from volttron.platform import get_address
+    return get_address
+
+def _get_file_reloaders():
+    """Lazy import file reloaders to avoid circular dependency."""
+    from volttron.utils import AbsolutePathFileReloader, VolttronHomeFileReloader
+    return AbsolutePathFileReloader, VolttronHomeFileReloader
 
 __all__ = [
     'load_config', 'run_agent', 'start_agent_thread', 'is_valid_identity', 'load_platform_config',
@@ -161,7 +192,7 @@ def load_platform_config(vhome=None):
     """Loads the platform config file if the path exists."""
     config_opts = {}
     if not vhome:
-        vhome = get_home()
+        vhome = _get_home()()
     path = os.path.join(vhome, 'config')
     if os.path.exists(path):
         parser = ConfigParser()
@@ -181,7 +212,7 @@ def get_platform_instance_name(vhome=None, prompt=False):
     if prompt:
         if not instance_name:
             instance_name = 'volttron1'
-        instance_name = prompt_response("Name of this volttron instance:",
+        instance_name = _get_prompt_response()("Name of this volttron instance:",
                                         mandatory=True,
                                         default=instance_name)
     else:
@@ -279,7 +310,7 @@ def store_message_bus_config(message_bus, instance_name):
                          "Or add instance-name = <instance name> in "
                          "vhome/config")
 
-    v_home = get_home()
+    v_home = _get_home()()
     config_path = os.path.join(v_home, "config")
     if os.path.exists(config_path):
         config = ConfigParser()
@@ -469,9 +500,9 @@ def vip_main(agent_class, identity=None, version='0.1', **kwargs):
                 raise ValueError("AGENT_PUBLIC and AGENT_SECRET environmental variables must "
                                  "be set to run without the platform.")
 
-        address = get_address()
+        address = _get_address()()
         agent_uuid = os.environ.get('AGENT_UUID')
-        volttron_home = get_home()
+        volttron_home = _get_home()()
 
         from volttron.platform.auth.certs import Certs
         certs = Certs()
@@ -731,7 +762,7 @@ def watch_file(path: str, callback: Callable):
     """
     file_path = Path(path)
     if not file_path.is_absolute():
-        file_path = Path(get_home()) / file_path
+        file_path = Path(_get_home()()) / file_path
 
     class Reloader(FileSystemEventHandler):
 
@@ -756,6 +787,7 @@ def watch_file_with_fullpath(fullpath, callback):
     dirname, filename = os.path.split(fullpath)
     _log.info("Adding file watch for %s", fullpath)
     _observer = Observer()
+    AbsolutePathFileReloader, _ = _get_file_reloaders()
     _observer.schedule(AbsolutePathFileReloader(fullpath, callback), dirname)
     _log.info("Added file watch for %s", fullpath)
     _observer.start()
