@@ -108,6 +108,7 @@ class Interface(BasicRevert, BaseInterface):
             return value
 
     def _set_point(self, point_name, value):
+        """ Main write entrypoint for the home assistant driver"""
         register = self.get_register_by_name(point_name)
         if register.read_only:
             raise IOError(
@@ -121,178 +122,28 @@ class Interface(BasicRevert, BaseInterface):
 
         # Lights -------------------------------------------------------------
         if "light." in entity_id:
-            if entity_point == "state":
-                if isinstance(register.value, int) and register.value in [0, 1]:
-                    if register.value == 1:
-                        self.turn_on_lights(entity_id)
-                    elif register.value == 0:
-                        self.turn_off_lights(entity_id)
-                else:
-                    error_msg = (
-                        f"State value for {entity_id} should be an integer value of 1 or 0"
-                    )
-                    _log.info(error_msg)
-                    raise ValueError(error_msg)
-
-            elif entity_point == "brightness":
-                # Brightness is expected to be an int in [0, 255]
-                if isinstance(register.value, int) and 0 <= register.value <= 255:
-                    self.change_brightness(entity_id, register.value)
-                else:
-                    error_msg = (
-                        "Brightness value should be an integer between 0 and 255"
-                    )
-                    _log.error(error_msg)
-                    raise ValueError(error_msg)
-            else:
-                error_msg = (
-                    f"Unexpected point_name {point_name} for register {entity_id}"
-                )
-                _log.error(error_msg)
-                raise ValueError(error_msg)
+            self._set_light_point(register, entity_point)
 
         # Input booleans ------------------------------------------------------
         elif "input_boolean." in entity_id:
-            if entity_point == "state":
-                if isinstance(register.value, int) and register.value in [0, 1]:
-                    if register.value == 1:
-                        self.set_input_boolean(entity_id, "on")
-                    elif register.value == 0:
-                        self.set_input_boolean(entity_id, "off")
-                else:
-                    error_msg = (
-                        f"State value for {entity_id} should be an integer value of 1 or 0"
-                    )
-                    _log.info(error_msg)
-                    raise ValueError(error_msg)
-            else:
-                _log.info("Currently, input_booleans only support state")
+            self._set_input_boolean_point(register, entity_point)
 
         # Thermostats ---------------------------------------------------------
         elif "climate." in entity_id:
-            if entity_point == "state":
-                if isinstance(register.value, int) and register.value in [0, 2, 3, 4]:
-                    if register.value == 0:
-                        self.change_thermostat_mode(entity_id=entity_id, mode="off")
-                    elif register.value == 2:
-                        self.change_thermostat_mode(entity_id=entity_id, mode="heat")
-                    elif register.value == 3:
-                        self.change_thermostat_mode(entity_id=entity_id, mode="cool")
-                    elif register.value == 4:
-                        self.change_thermostat_mode(entity_id=entity_id, mode="auto")
-                else:
-                    error_msg = (
-                        "Climate state should be an integer value of 0, 2, 3, or 4"
-                    )
-                    _log.error(error_msg)
-                    raise ValueError(error_msg)
-            elif entity_point == "temperature":
-                self.set_thermostat_temperature(
-                    entity_id=entity_id, temperature=register.value
-                )
-            else:
-                error_msg = (
-                    "Currently set_point is supported only for thermostats state and "
-                    f"temperature {entity_id}"
-                )
-                _log.error(error_msg)
-                raise ValueError(error_msg)
-
+            self._set_climate_point(register, entity_point)
+            
         # Locks ---------------------------------------------------------------
         elif register.entity_id.startswith("lock."):
-            if entity_point != "state":
-                error_msg = (
-                    f"Currently, locks only support state writes {register.entity_id}"
-                )
-                _log.error(error_msg)
-                raise ValueError(error_msg)
-
-            desired_service = self._normalize_lock_command(register.value)
-            if desired_service == "lock":
-                self.lock_device(register.entity_id)
-            elif desired_service == "unlock":
-                self.unlock_device(register.entity_id)
+            self._set_lock_point(register, entity_point)
 
         # Fans -----------------------------------------------------------
         elif register.entity_id.startswith("fan."):
-            v = register.value
-
-            if entity_point == "state":
-                # Normalize typical on/off representations to a boolean.
-                if isinstance(v, str):
-                    vv = v.strip().lower()
-                    is_on = vv in ("on", "true", "1")
-                elif isinstance(v, (bool, int)):
-                    is_on = bool(v)
-                else:
-                    raise ValueError(
-                        f"Unsupported fan state value type: {type(v)} for {entity_id}"
-                    )
-
-                self.set_fan_state(entity_id, is_on)
-
-            elif entity_point in ("percentage", "speed", "level"):
-                # Fan speed (percentage) is normalized into [0, 100].
-                try:
-                    pct = int(v)
-                except Exception:
-                    raise ValueError(
-                        f"Fan percentage for {entity_id} must be an integer: {v}"
-                    )
-
-                pct = max(0, min(100, pct))
-                self.set_fan_percentage(entity_id, pct)
-
-            else:
-                raise ValueError(
-                    f"Fan entity {entity_id} supports only 'state' or "
-                    f"a percentage-like point (percentage/speed/level), not '{entity_point}'"
-                )
+            self._set_fan_point(register, entity_point)
             
         # Covers (motorized curtains/blinds) -----------------------------
         elif register.entity_id.startswith("cover."):
-            v = register.value
+            self._set_cover_point(register, entity_point)
 
-            if entity_point == "state":
-                # Map common values to open/close actions.
-                if isinstance(v, str):
-                    vv = v.strip().lower()
-                    if vv in ("open", "opened", "on", "1", "true"):
-                        self.open_cover(entity_id)
-                    elif vv in ("close", "closed", "off", "0", "false"):
-                        self.close_cover(entity_id)
-                    else:
-                        raise ValueError(
-                            f"Unsupported cover state value '{v}' for {entity_id}"
-                        )
-                elif isinstance(v, (bool, int)):
-                    if bool(v):
-                        self.open_cover(entity_id)
-                    else:
-                        self.close_cover(entity_id)
-                else:
-                    raise ValueError(
-                        f"Unsupported cover state value type: {type(v)} for {entity_id}"
-                    )
-
-            elif entity_point in ("position", "percentage", "current_position"):
-                # Normalize cover position into [0, 100].
-                try:
-                    pos = int(v)
-                except Exception:
-                    raise ValueError(
-                        f"Cover position for {entity_id} must be an integer: {v}"
-                    )
-
-                pos = max(0, min(100, pos))
-                self.set_cover_position(entity_id, pos)
-
-            else:
-                raise ValueError(
-                    f"Cover entity {entity_id} supports only 'state' or "
-                    f"'position'-like points (position/percentage/current_position), "
-                    f"not '{entity_point}'"
-                )
 
         # Fallback ------------------------------------------------------------
         else:
@@ -305,6 +156,199 @@ class Interface(BasicRevert, BaseInterface):
             raise ValueError(error_msg)
 
         return register.value
+    
+    # ===============================================
+    # Domain-specific (Devices) helper functions
+    # ===============================================
+    def _set_light_point(self, register, entity_point):
+        """handle write operations for light entities (state/brightness)."""
+        entity_id = register.entity_id
+        v = register.value
+
+        if entity_point == "state":
+            if isinstance(v, int) and v in (0, 1):
+                if v == 1:
+                    self.turn_on_lights(entity_id)
+                else:
+                    self.turn_off_lights(entity_id)
+            else:
+                error_msg = (
+                    f"State value for {entity_id} should be an integer value of 1 or 0"
+                )
+                _log.info(error_msg)
+                raise ValueError(error_msg)
+
+        elif entity_point == "brightness":
+            # Brightness is expected to be an int in [0, 255]
+            if isinstance(v, int) and 0 <= v <= 255:
+                self.change_brightness(entity_id, v)
+            else:
+                error_msg = (
+                    "Brightness value should be an integer between 0 and 255"
+                )
+                _log.error(error_msg)
+                raise ValueError(error_msg)
+
+        else:
+            error_msg = (
+                f"Unexpected point_name {register.point_name} for register {entity_id}"
+            )
+            _log.error(error_msg)
+            raise ValueError(error_msg)
+        
+    def _set_input_boolean_point(self, register, entity_point):
+        """handle input_boolean write operations (state only)"""
+        entity_id = register.entity_id
+        v = register.value
+
+        if entity_point == "state":
+            if isinstance(v, int) and v in (0, 1):
+                if v == 1:
+                    self.set_input_boolean(entity_id, "on")
+                else:
+                    self.set_input_boolean(entity_id, "off")
+            else:
+                error_msg = (
+                    f"State value for {entity_id} should be an integer value of 1 or 0"
+                )
+                _log.info(error_msg)
+                raise ValueError(error_msg)
+        else:
+            _log.info("Currently, input_booleans only support state")
+
+    def _set_climate_point(self, register, entity_point):
+        """handle thermostat (climate) write operations (state/temperature)"""
+        entity_id = register.entity_id
+        v = register.value
+
+        if entity_point == "state":
+            if isinstance(v, int) and v in (0, 2, 3, 4):
+                if v == 0:
+                    self.change_thermostat_mode(entity_id=entity_id, mode="off")
+                elif v == 2:
+                    self.change_thermostat_mode(entity_id=entity_id, mode="heat")
+                elif v == 3:
+                    self.change_thermostat_mode(entity_id=entity_id, mode="cool")
+                elif v == 4:
+                    self.change_thermostat_mode(entity_id=entity_id, mode="auto")
+            else:
+                error_msg = (
+                    "Climate state should be an integer value of 0, 2, 3, or 4"
+                )
+                _log.error(error_msg)
+                raise ValueError(error_msg)
+
+        elif entity_point == "temperature":
+            self.set_thermostat_temperature(entity_id=entity_id, temperature=v)
+
+        else:
+            error_msg = (
+                "Currently set_point is supported only for thermostats state and "
+                f"temperature {entity_id}"
+            )
+            _log.error(error_msg)
+            raise ValueError(error_msg)
+
+    def _set_lock_point(self, register, entity_point):
+        """handle lock write operations (lock/unlock state)"""
+        if entity_point != "state":
+            error_msg = (
+                f"Currently, locks only support state writes {register.entity_id}"
+            )
+            _log.error(error_msg)
+            raise ValueError(error_msg)
+
+        desired_service = self._normalize_lock_command(register.value)
+        if desired_service == "lock":
+            self.lock_device(register.entity_id)
+        elif desired_service == "unlock":
+            self.unlock_device(register.entity_id)
+
+    def _set_fan_point(self, register, entity_point):
+        """handle fan write operations (state/speed)."""
+        entity_id = register.entity_id
+        v = register.value
+
+        if entity_point == "state":
+            # Normalize typical on/off representations to a boolean.
+            if isinstance(v, str):
+                vv = v.strip().lower()
+                is_on = vv in ("on", "true", "1")
+            elif isinstance(v, (bool, int)):
+                is_on = bool(v)
+            else:
+                raise ValueError(
+                    f"Unsupported fan state value type: {type(v)} for {entity_id}"
+                )
+
+            self.set_fan_state(entity_id, is_on)
+
+        elif entity_point in ("percentage", "speed", "level"):
+            # Fan speed (percentage) is normalized into [0, 100].
+            try:
+                pct = int(v)
+            except Exception:
+                raise ValueError(
+                    f"Fan percentage for {entity_id} must be an integer: {v}"
+                )
+
+            pct = max(0, min(100, pct))
+            self.set_fan_percentage(entity_id, pct)
+
+        else:
+            raise ValueError(
+                f"Fan entity {entity_id} supports only 'state' or "
+                f"a percentage-like point (percentage/speed/level), not '{entity_point}'"
+            )
+
+
+    def _set_cover_point(self, register, entity_point):
+        """handle cover (curtain/blinds) write operations (state/position)."""
+        entity_id = register.entity_id
+        v = register.value
+
+        if entity_point == "state":
+            # Map common values to open/close actions.
+            if isinstance(v, str):
+                vv = v.strip().lower()
+                if vv in ("open", "opened", "on", "1", "true"):
+                    self.open_cover(entity_id)
+                elif vv in ("close", "closed", "off", "0", "false"):
+                    self.close_cover(entity_id)
+                else:
+                    raise ValueError(
+                        f"Unsupported cover state value '{v}' for {entity_id}"
+                    )
+
+            elif isinstance(v, (bool, int)):
+                if bool(v):
+                    self.open_cover(entity_id)
+                else:
+                    self.close_cover(entity_id)
+
+            else:
+                raise ValueError(
+                    f"Unsupported cover state value type: {type(v)} for {entity_id}"
+                )
+
+        elif entity_point in ("position", "percentage", "current_position"):
+            # Normalize cover position into [0, 100].
+            try:
+                pos = int(v)
+            except Exception:
+                raise ValueError(
+                    f"Cover position for {entity_id} must be an integer: {v}"
+                )
+
+            pos = max(0, min(100, pos))
+            self.set_cover_position(entity_id, pos)
+
+        else:
+            raise ValueError(
+                f"Cover entity {entity_id} supports only 'state' or "
+                f"'position'-like points (position/percentage/current_position), "
+                f"not '{entity_point}'"
+            )
 
 
     def get_entity_data(self, point_name):
