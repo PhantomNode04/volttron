@@ -265,6 +265,7 @@ class Interface(BasicRevert, BaseInterface):
             self.unlock_device(register.entity_id)
 
     def _set_fan_point(self, register, entity_point):
+        #同理把不同输入的内容，转换成需要风扇执行的数据，然后用最后写的那几个函数让风扇执行这些数据
         """handle fan write operations (state/speed)."""
         entity_id = register.entity_id
         v = register.value
@@ -306,7 +307,8 @@ class Interface(BasicRevert, BaseInterface):
         """handle cover (curtain/blinds) write operations (state/position)."""
         entity_id = register.entity_id
         v = register.value
-
+        #这个是用来判断用户的意图，就是接受用户那边的信息然后分析
+        #close_cover() 和 set_cover_position()是把解析出来的命令数据下达给下面的窗帘去执行的
         if entity_point == "state":
             # Map common values to open/close actions.
             if isinstance(v, str):
