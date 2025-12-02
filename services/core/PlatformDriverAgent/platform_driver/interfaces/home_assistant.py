@@ -625,7 +625,7 @@ class Interface(BasicRevert, BaseInterface):
         _post_method(url, headers, payload, f"set fan {entity_id} speed to {pct}")
 
     # ---------------- Lock helpers ----------------
-
+    #use home assistant to control the lock of the door
     def lock_device(self, entity_id):
         self._send_lock_command(entity_id, "lock")
 
@@ -637,6 +637,7 @@ class Interface(BasicRevert, BaseInterface):
             error_msg = f"{entity_id} is not a valid lock entity ID."
             _log.error(error_msg)
             raise ValueError(error_msg)
+        # if we found the entity has some problem we will display the error
         url = f"http://{self.ip_address}:{self.port}/api/services/lock/{action}"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -646,7 +647,7 @@ class Interface(BasicRevert, BaseInterface):
         _post_method(url, headers, payload, f"{action} {entity_id}")
 
     # ---------------- Cover helpers ----------------
-
+    #home assistant control the curtain
     def open_cover(self, entity_id):
         """Call Home Assistant cover.open_cover service."""
         if not entity_id.startswith("cover."):
@@ -658,6 +659,7 @@ class Interface(BasicRevert, BaseInterface):
         }
         payload = {"entity_id": entity_id}
         _post_method(url, headers, payload, f"open {entity_id}")
+        #open curtain
 
     def close_cover(self, entity_id):
         """Call Home Assistant cover.close_cover service."""
@@ -670,6 +672,7 @@ class Interface(BasicRevert, BaseInterface):
         }
         payload = {"entity_id": entity_id}
         _post_method(url, headers, payload, f"close {entity_id}")
+        #close curtain
 
     def set_cover_position(self, entity_id, position):
         """Call Home Assistant cover.set_cover_position with a 0–100 integer value."""
@@ -686,4 +689,3 @@ class Interface(BasicRevert, BaseInterface):
         payload = {"entity_id": entity_id, "position": position}
         _post_method(url, headers, payload, f"set cover {entity_id} position to {position}")
         #successly post
-        #这段代码是用来控制 Home Assistant 中的“窗帘 / 百叶窗 / 卷帘门（cover）”的位置（0–100%）。
