@@ -673,8 +673,11 @@ class Interface(BasicRevert, BaseInterface):
 
     def set_cover_position(self, entity_id, position):
         """Call Home Assistant cover.set_cover_position with a 0–100 integer value."""
+        #entity_id:the id of the entity
+        #position:curtain's position
         if not entity_id.startswith("cover."):
             raise ValueError(f"{entity_id} is not a valid cover entity ID.")
+        #check entity avilable
         url = f"http://{self.ip_address}:{self.port}/api/services/cover/set_cover_position"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -682,3 +685,5 @@ class Interface(BasicRevert, BaseInterface):
         }
         payload = {"entity_id": entity_id, "position": position}
         _post_method(url, headers, payload, f"set cover {entity_id} position to {position}")
+        #successly post
+        #这段代码是用来控制 Home Assistant 中的“窗帘 / 百叶窗 / 卷帘门（cover）”的位置（0–100%）。
