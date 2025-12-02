@@ -369,101 +369,118 @@ class Interface(BasicRevert, BaseInterface):
 
     def _scrape_all(self):
         result = {}
-        read_registers = self.get_registers_by_type("byte", True)
-        write_registers = self.get_registers_by_type("byte", False)
+        registers = self.get_registers_by_type("byte", True) + \
+                    self.get_registers_by_type("byte", False)
 
-        for register in read_registers + write_registers:
+        for register in registers:
             entity_id = register.entity_id
-            entity_point = register.entity_point
+            entity_data = self.get_entity_data(entity_id)
+
             try:
-                entity_data = self.get_entity_data(entity_id)  # Using Entity ID to get data
-                if "climate." in entity_id:  # handling thermostats.
-                    if entity_point == "state":
-                        state = entity_data.get("state", None)
-                        # Giving thermostat states an equivalent number.
-                        if state == "off":
-                            register.value = 0
-                            result[register.point_name] = 0
-                        elif state == "heat":
-                            register.value = 2
-                            result[register.point_name] = 2
-                        elif state == "cool":
-                            register.value = 3
-                            result[register.point_name] = 3
-                        elif state == "auto":
-                            register.value = 4
-                            result[register.point_name] = 4
-                        else:
-                            error_msg = f"State {state} from {entity_id} is not yet supported"
-                            _log.error(error_msg)
-                            ValueError(error_msg)
-                    # Assigning attributes
-                    else:
-                        attribute = entity_data.get("attributes", {}).get(f"{entity_point}", 0)
-                        register.value = attribute
-                        result[register.point_name] = attribute
-                # handling light / input_boolean / lock / fan / cover states
-                elif (
-                    entity_id.startswith("light.")
-                    or entity_id.startswith("input_boolean.")
-                    or entity_id.startswith("lock.")
-                    or entity_id.startswith("fan.")
-                    or entity_id.startswith("cover.")
-                ):
-                    if entity_point == "state":
-                        state = entity_data.get("state", None)
+                if entity_id.startswith("climate."):
+                    value = self._scrape_climate(register, entity_data)
 
-                        if entity_id.startswith("lock."):
-                            # Locks: "locked"/"unlocked" → 1/0
-                            converted_state = self._convert_lock_state(state)
-                            register.value = converted_state
-                            result[register.point_name] = converted_state
+                elif entity_id.startswith("light."):
+                    value = self._scrape_light(register, entity_data)
 
-                        elif entity_id.startswith("cover."):
-                            # Covers: "open"/"closed" → 1/0, others kept as-is.
-                            if state == "open":
-                                register.value = 1
-                                result[register.point_name] = 1
-                            elif state == "closed":
-                                register.value = 0
-                                result[register.point_name] = 0
-                            else:
-                                register.value = state
-                                result[register.point_name] = state
+                elif entity_id.startswith("input_boolean."):
+                    value = self._scrape_input_boolean(register, entity_data)
 
-                        else:
-                            # Lights, input booleans, and fans use on/off mapping.
-                            if state == "on":
-                                register.value = 1
-                                result[register.point_name] = 1
-                            elif state == "off":
-                                register.value = 0
-                                result[register.point_name] = 0
-                            else:
-                                # Preserve raw state if it is not strictly on/off
-                                register.value = state
-                                result[register.point_name] = state
-                    else:
-                        attribute = entity_data.get("attributes", {}).get(
-                            f"{entity_point}", 0
-                        )
-                        register.value = attribute
-                        result[register.point_name] = attribute
-                else:  # handling all devices that are not thermostats or light states
-                    if entity_point == "state":
+                elif entity_id.startswith("lock."):
+                    value = self._scrape_lock(register, entity_data)
 
-                        state = entity_data.get("state", None)
-                        register.value = state
-                        result[register.point_name] = state
-                    # Assigning attributes
-                    else:
-                        attribute = entity_data.get("attributes", {}).get(f"{entity_point}", 0)
-                        register.value = attribute
-                        result[register.point_name] = attribute
+                elif entity_id.startswith("fan."):
+                    value = self._scrape_fan(register, entity_data)
+
+                elif entity_id.startswith("cover."):
+                    value = self._scrape_cover(register, entity_data)
+
+                else:
+                    value = self._scrape_generic(register, entity_data)
+
+                result[register.point_name] = value
+
             except Exception as e:
-                _log.error(f"An unexpected error occurred for entity_id: {entity_id}: {e}")
+                _log.error(f"Error scraping {entity_id}: {e}")
 
         return result
+#scrape all full function
+
+    def _scrape_climate(self, register, entity_data):
+        entity_point = register.entity_point
+        state = entity_data.get("state", None)
+
+        # mode (off/heat/cool/auto)
+        if entity_point == "state":
+            mapping = {"off": 0, "heat": 2, "cool": 3, "auto": 4}
+            value = mapping.get(state, state)
+            register.value = value
+            return value
+
+        # temperature, humidity, etc.
+        attr = entity_data.get("attributes", {}).get(entity_point, 0)
+        register.value = attr
+        return attr
+
+    def _scrape_light(self, register, entity_data):
+        entity_point = register.entity_point
+        state = entity_data.get("state", None)
+
+        if entity_point == "state":
+            value = 1 if state == "on" else 0
+        else:
+            value = entity_data.get("attributes", {}).get(entity_point, 0)
+
+        register.value = value
+        return value
+
+    def _scrape_input_boolean(self, register, entity_data):
+        state = entity_data.get("state", None)
+        value = 1 if state == "on" else 0
+        register.value = value
+        return value
+
+    def _scrape_lock(self, register, entity_data):
+        state = entity_data.get("state", None)
+        value = self._convert_lock_state(state)
+        register.value = value
+        return value
+
+    def _scrape_fan(self, register, entity_data):
+        entity_point = register.entity_point
+
+        if entity_point == "state":
+            state = entity_data.get("state", None)
+            value = 1 if state == "on" else 0
+        else:
+            value = entity_data.get("attributes", {}).get(entity_point, 0)
+
+        register.value = value
+        return value
+
+    def _scrape_cover(self, register, entity_data):
+        entity_point = register.entity_point
+        state = entity_data.get("state", None)
+
+        if entity_point == "state":
+            mapping = {"open": 1, "closed": 0}
+            value = mapping.get(state, state)
+        else:
+            value = entity_data.get("attributes", {}).get(entity_point, 0)
+
+        register.value = value
+        return value
+
+    def _scrape_generic(self, register, entity_data):
+        entity_point = register.entity_point
+
+        if entity_point == "state":
+            value = entity_data.get("state", None)
+        else:
+            value = entity_data.get("attributes", {}).get(entity_point, 0)
+
+        register.value = value
+        return value
 
     def parse_config(self, config_dict):
 
