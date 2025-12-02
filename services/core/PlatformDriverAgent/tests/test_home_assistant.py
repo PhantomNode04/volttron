@@ -179,6 +179,30 @@ def test_cover_open_close(volttron_instance, config_store):
 
     assert result.get("curtain_state") in (0, "closed")
 
+def test_cover_position(volttron_instance, config_store):
+    """Test setting the curtain/cover position."""
+    agent = volttron_instance.dynamic_agent
+
+    # Set position to 50%
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER,
+        "set_point",
+        "home_assistant",
+        "curtain_position",
+        50,
+    ).get(timeout=20)
+
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER,
+        "scrape_all",
+        "home_assistant",
+    ).get(timeout=20)
+
+    pos = result.get("curtain_position")
+
+    assert str(pos) in ("50", "50.0")
 
 @pytest.fixture(scope="module")
 def config_store(volttron_instance, platform_driver):
