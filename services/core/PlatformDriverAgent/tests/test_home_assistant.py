@@ -82,6 +82,103 @@ def test_set_point(volttron_instance, config_store):
     result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all', 'home_assistant').get(timeout=20)
     assert result == expected_values, "The result does not match the expected result."
 
+# New tests 
+
+def test_lock_state(volttron_instance, config_store):
+    """Test locking and unlocking the front door."""
+    agent = volttron_instance.dynamic_agent
+
+    # Lock (1)
+    agent.vip.rpc.call(PLATFORM_DRIVER, 'set_point',
+                       'home_assistant', 'front_door_lock_state', 1)
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all',
+                                'home_assistant').get(timeout=20)
+
+    assert result.get('front_door_lock_state') in (1, "locked")
+
+    # Unlock (0)
+    agent.vip.rpc.call(PLATFORM_DRIVER, 'set_point',
+                       'home_assistant', 'front_door_lock_state', 0)
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all',
+                                'home_assistant').get(timeout=20)
+
+    assert result.get('front_door_lock_state') in (0, "unlocked")
+
+
+def test_fan_switch(volttron_instance, config_store):
+    """Test turning the fan on and off."""
+    agent = volttron_instance.dynamic_agent
+
+    # Turn ON
+    agent.vip.rpc.call(PLATFORM_DRIVER, 'set_point',
+                       'home_assistant', 'living_room_fan_state', 1)
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all',
+                                'home_assistant').get(timeout=20)
+
+    assert result.get('living_room_fan_state') in (1, "on")
+
+    # Turn OFF
+    agent.vip.rpc.call(PLATFORM_DRIVER, 'set_point',
+                       'home_assistant', 'living_room_fan_state', 0)
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all',
+                                'home_assistant').get(timeout=20)
+
+    assert result.get('living_room_fan_state') in (0, "off")
+
+
+def test_fan_percentage(volttron_instance, config_store):
+    """Test setting the fan speed percentage."""
+    agent = volttron_instance.dynamic_agent
+
+    # Set fan to 50%
+    agent.vip.rpc.call(PLATFORM_DRIVER, 'set_point',
+                       'home_assistant', 'living_room_fan_percentage', 50)
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(PLATFORM_DRIVER, 'scrape_all',
+                                'home_assistant').get(timeout=20)
+
+    pct = result.get('living_room_fan_percentage')
+
+    # Some HA setups return int, some return string
+    assert str(pct) in ("50", "50.0", "50")
+
+def test_cover_open_close(volttron_instance, config_store):
+    """Test opening and closing the curtain/cover."""
+    agent = volttron_instance.dynamic_agent
+
+    # Open cover
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "curtain_state", 1
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+
+    assert result.get("curtain_state") in (1, "open")
+
+    # Close cover
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "curtain_state", 0
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+
+    assert result.get("curtain_state") in (0, "closed")
+
 
 @pytest.fixture(scope="module")
 def config_store(volttron_instance, platform_driver):
@@ -100,6 +197,51 @@ def config_store(volttron_instance, platform_driver):
         "Starting Value": 3,
         "Type": "int",
         "Notes": "lights hallway"
+    },{
+        "Entity ID": "lock.front_door",
+        "Entity Point": "state",
+        "Volttron Point Name": "front_door_lock_state",
+        "Units": "Locked/Unlocked",
+        "Writable": True,
+        "Starting Value": 0,
+        "Type": "int",
+        "Notes": "front door lock"
+    },{
+        "Entity ID": "fan.living_room",
+        "Entity Point": "state",
+        "Volttron Point Name": "living_room_fan_state",
+        "Units": "On/Off",
+        "Writable": True,
+        "Starting Value": 0,
+        "Type": "int",
+        "Notes": "fan power"
+    },{
+        "Entity ID": "fan.living_room",
+        "Entity Point": "percentage",
+        "Volttron Point Name": "living_room_fan_percentage",
+        "Units": "%",
+        "Writable": True,
+        "Starting Value": 0,
+        "Type": "int",
+        "Notes": "fan speed"
+    },{
+    "Entity ID": "cover.living_room_curtain",
+    "Entity Point": "state",
+    "Volttron Point Name": "curtain_state",
+    "Units": "Open/Closed",
+    "Writable": True,
+    "Starting Value": 0,
+    "Type": "int",
+    "Notes": "curtain open/close"
+    },{
+        "Entity ID": "cover.living_room_curtain",
+        "Entity Point": "position",
+        "Volttron Point Name": "curtain_position",
+        "Units": "%",
+        "Writable": True,
+        "Starting Value": 0,
+        "Type": "int",
+        "Notes": "curtain position"
     }]
 
     volttron_instance.dynamic_agent.vip.rpc.call(CONFIGURATION_STORE,
