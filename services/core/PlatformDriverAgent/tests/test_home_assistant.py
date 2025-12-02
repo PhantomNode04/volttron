@@ -108,6 +108,54 @@ def test_lock_state(volttron_instance, config_store):
 
     assert result.get('front_door_lock_state') in (0, "unlocked")
 
+def test_lock_string_inputs(volttron_instance, config_store):
+    """Test lock command normalization for various string inputs."""
+    agent = volttron_instance.dynamic_agent
+
+    # Locked → lock → expect 1
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "front_door_lock_state", "locked"
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+    assert result.get("front_door_lock_state") in (1, "locked")
+
+    # Open → unlock → expect 0
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "front_door_lock_state", "open"
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+    assert result.get("front_door_lock_state") in (0, "unlocked")
+
+    # "false" → unlock → expect 0
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "front_door_lock_state", "false"
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+    assert result.get("front_door_lock_state") in (0, "unlocked")
+
+    # "lock" → lock → expect 1
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER, "set_point",
+        "home_assistant", "front_door_lock_state", "lock"
+    )
+    gevent.sleep(10)
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+    assert result.get("front_door_lock_state") in (1, "locked")
+
 
 def test_fan_switch(volttron_instance, config_store):
     """Test turning the fan on and off."""
@@ -203,6 +251,56 @@ def test_cover_position(volttron_instance, config_store):
     pos = result.get("curtain_position")
 
     assert str(pos) in ("50", "50.0")
+
+def test_cover_position_invalid_input(volttron_instance, config_store):
+    """Test that invalid cover position values raise errors or get clamped."""
+    agent = volttron_instance.dynamic_agent
+
+    # 1) Invalid string input should raise ValueError
+    with pytest.raises(ValueError):
+        agent.vip.rpc.call(
+            PLATFORM_DRIVER,
+            "set_point",
+            "home_assistant",
+            "curtain_position",
+            "abc"   # invalid
+        ).get(timeout=20)
+
+    # 2) Position above 100 should be clamped to 100
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER,
+        "set_point",
+        "home_assistant",
+        "curtain_position",
+        200       # out of range
+    ).get(timeout=20)
+
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+
+    assert str(result.get("curtain_position")) in ("100", "100.0"), \
+        "Cover position should clamp to 100 for values above 100"
+
+    # 3) Position below 0 should be clamped to 0
+    agent.vip.rpc.call(
+        PLATFORM_DRIVER,
+        "set_point",
+        "home_assistant",
+        "curtain_position",
+        -50       # out of range
+    ).get(timeout=20)
+
+    gevent.sleep(10)
+
+    result = agent.vip.rpc.call(
+        PLATFORM_DRIVER, "scrape_all", "home_assistant"
+    ).get(timeout=20)
+
+    assert str(result.get("curtain_position")) in ("0", "0.0"), \
+        "Cover position should clamp to 0 for values below 0"
 
 @pytest.fixture(scope="module")
 def config_store(volttron_instance, platform_driver):
